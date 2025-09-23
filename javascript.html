@@ -1,0 +1,464 @@
+
+<script>
+/*********************
+ * Utility Functions
+ *********************/
+function showLoading() {
+  document.getElementById("loading-overlay").style.display = "flex";
+}
+function hideLoading() {
+  document.getElementById("loading-overlay").style.display = "none";
+}
+function setStatus(msg, type = "neutral") {
+  const statusEl = document.getElementById("status-text");
+  statusEl.innerHTML = ""; // reset
+  const iconSpan = document.createElement("span");
+  const textSpan = document.createElement("span");
+  textSpan.textContent = msg;
+
+  // Reset classes
+  statusEl.className =
+    "mt-1 p-2 rounded text-sm md:text-base flex items-center gap-2";
+
+  switch (type) {
+    case "working":
+      statusEl.classList.add("bg-blue-100", "text-blue-800");
+      iconSpan.textContent = "⏳";
+      break;
+    case "success":
+      statusEl.classList.add("bg-green-100", "text-green-800");
+      iconSpan.textContent = "✅";
+      break;
+    case "error":
+      statusEl.classList.add("bg-red-100", "text-red-800");
+      iconSpan.textContent = "❌";
+      break;
+    default:
+      statusEl.classList.add("bg-gray-100", "text-gray-800");
+      iconSpan.textContent = "ℹ️";
+  }
+
+  statusEl.appendChild(iconSpan);
+  statusEl.appendChild(textSpan);
+}
+function showError(error) {
+  console.error(error);
+  hideLoading();
+  setStatus(`Error: ${error}`, "error");
+  alert("An error has occurred, please try again.");
+}
+function formatSeconds(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+/*********************
+ * Event Bindings
+ *********************/
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("fetchCount").addEventListener("click", fetchCount);
+  document.getElementById("loadData").addEventListener("click", loadSenders);
+  document.getElementById("loadAllData").addEventListener("click", loadAllSenders);
+  document.getElementById("bgArchive").addEventListener("click", () => {
+    const sender = prompt("Enter sender email to archive:");
+    if (sender) startArchiveJobUI(sender);
+  });
+  document.getElementById("bgFetch").addEventListener("click", startFetchSendersJobUI);
+  document.getElementById("resumeJobs").addEventListener("click", resumeRunningJobs);
+
+  // Delegated events for table rows
+  document.getElementById("data").addEventListener("click", (e) => {
+    if (e.target.classList.contains("loadSubjects")) loadSubjects(e.target);
+    if (e.target.classList.contains("markReadAndArchive")) markReadAndArchive(e.target);
+  });
+
+  // 🔑 Auto-resume jobs on page load
+  autoResumeJobs();
+});
+
+/*********************
+ * Counts
+ *********************/
+function fetchCount() {
+  const search = document.getElementById("search").value;
+  setStatus(`Fetching exact count for "${search}"...`, "working");
+  showLoading();
+  google.script.run
+    .withSuccessHandler((exact) => {
+      hideLoading();
+      setStatus(`Search "${search}" matches exactly ${exact} threads.`, "success");
+    })
+    .withFailureHandler((err) => {
+      hideLoading();
+      showError(err);
+    })
+    .getThreadCountExact(search);
+}
+
+/*********************
+ * Load Senders
+ *********************/
+function loadSenders() {
+  const search = document.getElementById("search").value;
+  const maxRounds = parseInt(document.getElementById("rounds").value, 10) || 5;
+  const pageSize = 100;
+  const requested = maxRounds * pageSize;
+
+  google.script.run
+    .withSuccessHandler((estimate) => {
+      if (estimate > requested) {
+        const proceed = confirm(
+          `⚠️ About ${estimate} threads, but only ~${requested} will be fetched.\nContinue?`
+        );
+        if (!proceed) {
+          setStatus("Cancelled. Adjust rounds and try again.", "neutral");
+          return;
+        }
+      }
+      startFetchingSenders(search, maxRounds, pageSize);
+    })
+    .withFailureHandler(showError)
+    .getThreadEstimate(search);
+}
+
+function loadAllSenders() {
+  const search = document.getElementById("search").value;
+  const pageSize = 100;
+  google.script.run
+    .withSuccessHandler((estimate) => {
+      if (!estimate) {
+        setStatus("No threads found.", "neutral");
+        return;
+      }
+      const requiredRounds = Math.ceil(estimate / pageSize);
+      setStatus(
+        `Fetching ALL ~${estimate} threads (${requiredRounds} rounds × ${pageSize}).`,
+        "working"
+      );
+      startFetchingSenders(search, requiredRounds, pageSize);
+    })
+    .withFailureHandler(showError)
+    .getThreadEstimate(search);
+}
+
+function startFetchingSenders(search, maxRounds, pageSize) {
+  setStatus(
+    `Loading up to ${maxRounds * pageSize} threads for "${search}"...`,
+    "working"
+  );
+  document.querySelector("#data tbody").innerHTML = "";
+  showLoading();
+
+  let round = 0;
+  let allSenders = [];
+  const startTime = Date.now();
+
+  function fetchPage(pageToken) {
+    google.script.run
+      .withSuccessHandler((result) => {
+        allSenders = allSenders.concat(result.senders);
+        round++;
+        const elapsedSecs = (Date.now() - startTime) / 1000;
+        const avgPerPage = elapsedSecs / round;
+        const remaining = maxRounds - round;
+        const etaSecs = Math.max(0, Math.round(avgPerPage * remaining));
+
+        if (round < maxRounds && result.nextPageToken) {
+          setStatus(
+            `Loaded page ${round}/${maxRounds} (~${allSenders.length} senders). ` +
+              `Elapsed: ${formatSeconds(elapsedSecs)}, ETA: ~${formatSeconds(
+                etaSecs
+              )}`,
+            "working"
+          );
+          fetchPage(result.nextPageToken);
+        } else {
+          hideLoading();
+          processSenders(allSenders);
+          setStatus(`Finished in ${formatSeconds(elapsedSecs)}`, "success");
+        }
+      })
+      .withFailureHandler((err) => {
+        hideLoading();
+        showError(err);
+      })
+      .getSendersPage(search, pageToken, pageSize);
+  }
+  fetchPage(null);
+}
+
+function processSenders(allSenders) {
+  const aggregated = {};
+  allSenders.forEach(([address, stats]) => {
+    if (!aggregated[address]) aggregated[address] = { total: 0, unread: 0, threads: 0 };
+    aggregated[address].total += stats.total;
+    aggregated[address].unread += stats.unread;
+    aggregated[address].threads += stats.threads;
+  });
+  const sortable = Object.entries(aggregated).sort((a, b) => b[1].total - a[1].total);
+  showSenders(sortable);
+}
+
+function showSenders(senders) {
+  const tbody = document.querySelector("#data tbody");
+  senders.forEach(([address, stats]) => {
+    tbody.insertAdjacentHTML(
+      "beforeend",
+      `<tr data-sender="${address}" class="hover:bg-gray-50 text-xs md:text-sm">
+        <td class="border border-gray-300 px-2 md:px-3 py-2 break-words max-w-[150px] md:max-w-none">${address}</td>
+        <td class="border border-gray-300 px-2 md:px-3 py-2 text-center">${stats.total}</td>
+        <td class="border border-gray-300 px-2 md:px-3 py-2 text-center">${stats.unread}</td>
+        <td class="border border-gray-300 px-2 md:px-3 py-2 text-center">${stats.threads}</td>
+        <td class="border border-gray-300 px-2 md:px-3 py-2 text-center">
+          <div class="flex flex-col md:flex-row gap-2 justify-center">
+            <button class="loadSubjects px-2 py-1 bg-blue-500 text-white rounded text-xs md:text-sm w-full md:w-auto" data-sender="${address}">Show Subjects</button>
+            <button class="markReadAndArchive px-2 py-1 bg-red-500 text-white rounded text-xs md:text-sm w-full md:w-auto" data-sender="${address}">Read & Archive</button>
+          </div>
+        </td>
+      </tr>`
+    );
+  });
+  document.getElementById("data").classList.remove("hidden");
+}
+
+/*********************
+ * Subjects
+ *********************/
+function loadSubjects(button) {
+  const sender = button.dataset.sender;
+  const search = document.getElementById("search").value;
+  setStatus(`Loading subjects from ${sender}...`, "working");
+  showLoading();
+  google.script.run
+    .withSuccessHandler((data) => {
+      hideLoading();
+      showSubjects(data);
+      setStatus(`Finished showing subjects from ${sender}`, "success");
+    })
+    .withFailureHandler((err) => {
+      hideLoading();
+      showError(err);
+    })
+    .getSubjects(sender, search);
+}
+
+function showSubjects(data) {
+  const row = document.querySelector(`tr[data-sender='${data.sender}']`);
+  row.dataset.subjectsAdded = true;
+  row.insertAdjacentHTML(
+    "afterend",
+    `<tr class="bg-gray-50 text-xs md:text-sm">
+       <td colspan="5" class="border border-gray-300 px-2 md:px-3 py-2">
+         <div class="space-y-1">
+           ${data.subjects
+             .map(
+               (s, i) =>
+                 `${i + 1}. <span class="text-gray-500 mr-2">${s.date}</span> <span>${s.subject}</span>`
+             )
+             .join("<br>")}
+         </div>
+       </td>
+     </tr>`
+  );
+  row.querySelector("button.loadSubjects").textContent = "Hide Subjects";
+}
+
+/*********************
+ * Mark Read + Archive
+ *********************/
+function markReadAndArchive(button) {
+  const sender = button.dataset.sender;
+  const search = document.getElementById("search").value;
+  const batchSize = 50;
+  let totalProcessed = 0,
+    totalExpected = 0;
+  const startTime = Date.now();
+
+  setStatus(`Archiving and marking emails from ${sender}...`, "working");
+  showLoading();
+
+  function processBatch(pageToken) {
+    google.script.run
+      .withSuccessHandler((result) => {
+        if (result.error) {
+          hideLoading();
+          showError(result.error);
+          return;
+        }
+        totalProcessed += result.processed;
+        if (result.total) totalExpected = result.total;
+        const elapsedSecs = (Date.now() - startTime) / 1000;
+        const avgPerBatch = elapsedSecs / (Math.max(1, totalProcessed / batchSize));
+        const remaining = Math.max(0, totalExpected - totalProcessed);
+        const estBatches = Math.ceil(remaining / batchSize);
+        const etaSecs = Math.round(avgPerBatch * estBatches);
+        setStatus(
+          `Processed ${totalProcessed}/${totalExpected} from ${sender}. ` +
+            `Elapsed: ${formatSeconds(elapsedSecs)}, ETA: ~${formatSeconds(etaSecs)}`,
+          "working"
+        );
+        if (result.nextPageToken) {
+          processBatch(result.nextPageToken);
+        } else {
+          hideLoading();
+          markReadAndArchiveSuccess(sender, (Date.now() - startTime) / 1000);
+        }
+      })
+      .withFailureHandler((err) => {
+        hideLoading();
+        showError(err);
+      })
+      .markReadAndArchiveBatch(sender, search, pageToken, batchSize);
+  }
+  processBatch(null);
+}
+
+function markReadAndArchiveSuccess(sender, elapsedSecs) {
+  const row = document.querySelector(`tr[data-sender='${sender}']`);
+  if (row && row.dataset.subjectsAdded) row.nextElementSibling.remove();
+  if (row) row.remove();
+  setStatus(
+    `Finished marking ${sender} in ${formatSeconds(elapsedSecs)}`,
+    "success"
+  );
+}
+
+/*********************
+ * Background Jobs
+ *********************/
+function startArchiveJobUI(sender) {
+  const search = document.getElementById("search").value;
+  setStatus(`Starting background archive for ${sender}...`, "working");
+  showLoading();
+  google.script.run
+    .withSuccessHandler((jobId) => {
+      hideLoading();
+      setStatus(`Archive job started. Job ID: ${jobId}`, "neutral");
+      resumeRunningJobs(); // refresh table
+    })
+    .withFailureHandler((err) => {
+      hideLoading();
+      showError(err);
+    })
+    .startMarkReadAndArchiveJob(search, sender);
+}
+
+function startFetchSendersJobUI() {
+  const search = document.getElementById("search").value;
+  setStatus(`Starting background fetch for "${search}"...`, "working");
+  showLoading();
+  google.script.run
+    .withSuccessHandler((jobId) => {
+      hideLoading();
+      setStatus(`Fetch job started. Job ID: ${jobId}`, "neutral");
+      resumeRunningJobs(); // refresh table
+    })
+    .withFailureHandler((err) => {
+      hideLoading();
+      showError(err);
+    })
+    .startFetchSendersJob(search);
+}
+
+function pollJob(jobId, onUpdate) {
+  function poll() {
+    google.script.run
+      .withSuccessHandler((job) => {
+        onUpdate(job);
+        if (job.status === "running") {
+          setTimeout(poll, 5000);
+        }
+      })
+      .withFailureHandler(showError)
+      .getJobStatus(jobId);
+  }
+  poll();
+}
+
+function resumeRunningJobs() {
+  google.script.run
+    .withSuccessHandler((jobs) => {
+      renderJobsTable(jobs);
+    })
+    .withFailureHandler(showError)
+    .listAllJobs();
+}
+
+function autoResumeJobs() {
+  google.script.run
+    .withSuccessHandler((jobs) => {
+      if (jobs.length > 0) {
+        jobs.forEach((job) => {
+          setStatus(
+            `Resuming job ${job.type} for ${job.sender || job.search}...`,
+            "working"
+          );
+          pollJob(job.id, (j) => {
+            if (j.status === "running") {
+              setStatus(
+                `${j.type === "fetchSenders" ? "Fetching senders" : "Archiving"}: ${j.processed}/${j.total} processed...`,
+                "working"
+              );
+            } else if (j.status === "done") {
+              setStatus(`Job ${j.id} finished.`, "success");
+            } else if (j.status === "error") {
+              setStatus(`Job ${j.id} error: ${j.error}`, "error");
+            } else if (j.status === "cancelled") {
+              setStatus(`Job ${j.id} cancelled.`, "neutral");
+            }
+          });
+        });
+      } else {
+        setStatus("No jobs running", "neutral");
+      }
+    })
+    .withFailureHandler(showError)
+    .listRunningJobs();
+}
+
+function renderJobsTable(jobs) {
+  const table = document.getElementById("jobsTable");
+  const tbody = table.querySelector("tbody");
+  tbody.innerHTML = "";
+  if (jobs.length === 0) {
+    table.classList.add("hidden");
+    return;
+  }
+  jobs.forEach((job) => {
+    const isRunning = job.status === "running";
+    tbody.insertAdjacentHTML(
+      "beforeend",
+      `<tr class="text-xs md:text-sm">
+        <td class="border px-2 break-all">${job.id}</td>
+        <td class="border px-2">${job.type}</td>
+        <td class="border px-2">${job.sender || job.search}</td>
+        <td class="border px-2">${job.status}</td>
+        <td class="border px-2">${job.processed}</td>
+        <td class="border px-2">${job.total}</td>
+        <td class="border px-2">${new Date(job.updatedAt).toLocaleTimeString()}</td>
+        <td class="border px-2">
+          ${isRunning
+            ? `<button class="cancelJob px-2 py-1 bg-red-500 text-white rounded text-xs" data-id="${job.id}">Cancel</button>`
+            : ""}
+        </td>
+      </tr>`
+    );
+  });
+  table.classList.remove("hidden");
+
+  // Bind cancel buttons
+  tbody.querySelectorAll(".cancelJob").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      google.script.run
+        .withSuccessHandler(() => {
+          setStatus(`Job ${id} cancelled.`, "neutral");
+          resumeRunningJobs();
+        })
+        .withFailureHandler(showError)
+        .cancelJob(id);
+    });
+  });
+}
+</script>
