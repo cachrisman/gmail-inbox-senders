@@ -51,13 +51,18 @@ function writeJobResults(jobId, job, rows) {
  ***********************/
 function startMarkReadAndArchiveJob(search, target) {
   const jobId = Utilities.getUuid();
-  const queryTarget = target && target.indexOf("@") !== -1 ? `from:${target}` : `from:*@${target}`;
+  // Handle array of targets (domains)
+  const targets = Array.isArray(target) ? target : [target];
+  // Build OR query for all domains
+  const queryTarget = targets
+    .map(t => t && t.indexOf("@") !== -1 ? `from:${t}` : `from:*@${t}`)
+    .join(" OR ");
 
   const job = {
     "Job ID": jobId,
     "Type": "markReadAndArchive",
     "Search": search,
-    "Target": target,
+    "Target": Array.isArray(target) ? target.join(", ") : target,
     "Query": queryTarget,
     "Status": "queued",
     "Processed": 0,
