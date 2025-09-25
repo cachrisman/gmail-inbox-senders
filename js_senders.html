@@ -191,9 +191,30 @@ function toggleDomainSenders(domain) {
 }
 
 /*********************
- * Select All toggle
+ * Domain Selection (single, shift-click, and select all)
  *********************/
+let lastCheckedDomain = null;
+
+function handleDomainCheckboxClick(e) {
+  const checkbox = e.target;
+  if (!checkbox.classList.contains('selectDomain')) return;
+
+  if (e.shiftKey && lastCheckedDomain) {
+    const checkboxes = Array.from(document.querySelectorAll('.selectDomain'));
+    const start = checkboxes.indexOf(lastCheckedDomain);
+    const end = checkboxes.indexOf(checkbox);
+
+    const [min, max] = [start, end].sort((a, b) => a - b);
+    checkboxes.slice(min, max + 1).forEach(cb => {
+      cb.checked = checkbox.checked;
+    });
+  }
+
+  lastCheckedDomain = checkbox;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  // Select All toggle
   const selectAllBox = document.getElementById("selectAllDomains");
   if (selectAllBox) {
     selectAllBox.addEventListener("change", (e) => {
@@ -201,7 +222,11 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(".selectDomain").forEach(cb => {
         cb.checked = checked;
       });
+      lastCheckedDomain = null; // Reset last checked when using select all
     });
   }
+
+  // Shift-click domain selection
+  document.addEventListener('click', handleDomainCheckboxClick);
 });
 </script>
