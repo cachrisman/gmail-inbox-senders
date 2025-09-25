@@ -50,31 +50,45 @@ function writeJobResults(jobId, job, rows) {
  * JOB CREATION / CONTROL
  ***********************/
 function startMarkReadAndArchiveJob(search, target) {
-  const jobId = Utilities.getUuid();
   // Handle array of targets (domains)
   const targets = Array.isArray(target) ? target : [target];
-  // Build OR query for all domains
-  const queryTarget = targets
-    .map(t => t && t.indexOf("@") !== -1 ? `from:${t}` : `from:*@${t}`)
-    .join(" OR ");
+  
+  // Split targets into batches of 50
+  const batchSize = 50;
+  const batches = [];
+  for (let i = 0; i < targets.length; i += batchSize) {
+    batches.push(targets.slice(i, i + batchSize));
+  }
 
-  const job = {
-    "Job ID": jobId,
-    "Type": "markReadAndArchive",
-    "Search": search,
-    "Target": Array.isArray(target) ? target.join(", ") : target,
-    "Query": queryTarget,
-    "Status": "queued",
-    "Processed": 0,
-    "Total": 0,
-    "PageToken": "",
-    "StartedAt": "",
-    "UpdatedAt": new Date().toISOString(),
-    "Error": ""
-  };
-  saveJob(job);
+  // Create a job for each batch
+  const jobIds = batches.map(batchTargets => {
+    const jobId = Utilities.getUuid();
+    // Build OR query for this batch of domains
+    const queryTarget = batchTargets
+      .map(t => t && t.indexOf("@") !== -1 ? `from:${t}` : `from:*@${t}`)
+      .join(" OR ");
+
+    const job = {
+      "Job ID": jobId,
+      "Type": "markReadAndArchive",
+      "Search": search,
+      "Target": batchTargets.join(", "),
+      "Query": queryTarget,
+      "Status": "queued",
+      "Processed": 0,
+      "Total": 0,
+      "PageToken": "",
+      "StartedAt": "",
+      "UpdatedAt": new Date().toISOString(),
+      "Error": "",
+      "BatchInfo": `Batch ${batches.indexOf(batchTargets) + 1} of ${batches.length}`
+    };
+    saveJob(job);
+    return jobId;
+  });
+
   ensureJobTrigger();
-  return jobId;
+  return { jobIds, totalBatches: batches.length };
 }
 
 function startFetchSendersJob(search) {

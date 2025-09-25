@@ -41,12 +41,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!selected.length) { setStatus("No domains selected", "neutral"); return; }
     
     const search = document.getElementById("search").value;
-    setStatus(`Queuing archive job for ${selected.length} domains...`, "working");
+    setStatus(`Queuing archive jobs for ${selected.length} domains...`, "working");
     google.script.run
       .withSuccessHandler((result) => {
         if (result.error) setStatus(result.error, "error");
         else {
-          setStatus(`Archive job queued for ${selected.length} domains`, "neutral");
+          const batchInfo = result.totalBatches > 1 
+            ? ` (split into ${result.totalBatches} batches of up to 50 domains each)`
+            : '';
+          setStatus(`Archive jobs queued for ${selected.length} domains${batchInfo}`, "neutral");
           selected.forEach(domain => {
             const row = document.querySelector(`tr[data-domain='${domain}']`);
             if (row) row.remove();
