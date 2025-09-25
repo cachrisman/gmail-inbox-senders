@@ -1,0 +1,162 @@
+<script>
+function showSenders(senders) {
+  // For compatibility: group and render
+  window.groupedDomains = groupByDomain(senders);
+  showDomains(window.groupedDomains);
+}
+
+/*********************
+ * Extract base domain (last 2 labels)
+ *********************/
+function getBaseDomain(email) {
+  const domain = (email.split("@")[1] || "").toLowerCase();
+  const parts = domain.split(".");
+  if (parts.length >= 2) {
+    return parts.slice(-2).join(".");
+  }
+  return domain;
+}
+
+/*********************
+ * Group senders by base domain
+ *********************/
+function groupByDomain(senders) {
+  const grouped = {};
+  senders.forEach(([address, stats]) => {
+    const domain = getBaseDomain(address) || "unknown";
+    if (!grouped[domain]) {
+      grouped[domain] = {
+        total: 0,
+        unread: 0,
+        threads: 0,
+        lastDate: null,
+        senders: []
+      };
+    }
+    grouped[domain].total += stats.total;
+    grouped[domain].unread += stats.unread;
+    grouped[domain].threads += stats.threads;
+
+    if (
+      !grouped[domain].lastDate ||
+      (stats.lastDate && new Date(stats.lastDate) > new Date(grouped[domain].lastDate))
+    ) {
+      grouped[domain].lastDate = stats.lastDate;
+    }
+
+    grouped[domain].senders.push([address, stats]);
+  });
+
+  // Sort by total descending
+  return Object.entries(grouped).sort((a, b) => b[1].total - a[1].total);
+}
+
+/*********************
+ * Render domains table
+ *********************/
+function showDomains(grouped) {
+  window.groupedDomains = grouped; // keep for sub-table expansion
+  const tbody = document.querySelector("#data tbody");
+  tbody.innerHTML = "";
+
+  grouped.forEach(([domain, stats]) => {
+    tbody.insertAdjacentHTML(
+      "beforeend",
+      `<tr data-domain="${domain}" class="hover:bg-gray-50 text-xs md:text-sm">
+        <td class="border px-2 text-center">
+          <input type="checkbox" class="selectDomain" data-domain="${domain}">
+        </td>
+        <td class="border px-2 font-semibold break-words">${domain}</td>
+        <td class="border px-2 text-center">${stats.total}</td>
+        <td class="border px-2 text-center">${stats.unread}</td>
+        <td class="border px-2 text-center">${stats.threads}</td>
+        <td class="border px-2 text-center">${
+          stats.lastDate ? new Date(stats.lastDate).toLocaleDateString() : ""
+        }</td>
+        <td class="border px-2 text-center">
+          <div class="flex flex-col md:flex-row gap-2 justify-center">
+            <button class="showDomainSenders px-2 py-1 bg-blue-500 text-white rounded text-xs md:text-sm w-full md:w-auto" data-domain="${domain}">
+              Show Senders
+            </button>
+            <button class="archiveDomain px-2 py-1 bg-red-500 text-white rounded text-xs md:text-sm w-full md:w-auto" data-domain="${domain}">
+              Read & Archive
+            </button>
+          </div>
+        </td>
+      </tr>`
+    );
+  });
+
+  document.getElementById("data").classList.remove("hidden");
+}
+
+/*********************
+ * Expand / collapse senders under a domain
+ *********************/
+function toggleDomainSenders(domain) {
+  const row = document.querySelector(`tr[data-domain='${domain}']`);
+  if (row.nextElementSibling && row.nextElementSibling.classList.contains("domain-senders")) {
+    row.nextElementSibling.remove();
+    return;
+  }
+
+  const domainStats = window.groupedDomains.find(([d]) => d === domain)[1];
+  const senderRows = domainStats.senders
+    .map(
+      ([addr, stats]) => `
+    <tr class="text-xs md:text-sm" data-sender="${addr}">
+      <td class="border px-2"></td>
+      <td class="border px-2 break-words">${addr}</td>
+      <td class="border px-2 text-center">${stats.total}</td>
+      <td class="border px-2 text-center">${stats.unread}</td>
+      <td class="border px-2 text-center">${stats.threads}</td>
+      <td class="border px-2 text-center">${
+        stats.lastDate ? new Date(stats.lastDate).toLocaleDateString() : ""
+      }</td>
+      <td class="border px-2 text-center">
+        <button class="archiveSender px-2 py-1 bg-red-500 text-white rounded text-xs md:text-sm w-full md:w-auto" data-sender="${addr}">
+          Read & Archive
+        </button>
+      </td>
+    </tr>`
+    )
+    .join("");
+
+  row.insertAdjacentHTML(
+    "afterend",
+    `<tr class="domain-senders bg-gray-50">
+       <td colspan="7">
+         <table class="w-full border text-xs md:text-sm">
+           <thead class="bg-gray-200">
+             <tr>
+               <th></th>
+               <th>Sender</th>
+               <th>Total</th>
+               <th>Unread</th>
+               <th>Threads</th>
+               <th>Most Recent</th>
+               <th>Actions</th>
+             </tr>
+           </thead>
+           <tbody>${senderRows}</tbody>
+         </table>
+       </td>
+     </tr>`
+  );
+}
+
+/*********************
+ * Select All toggle
+ *********************/
+document.addEventListener("DOMContentLoaded", () => {
+  const selectAllBox = document.getElementById("selectAllDomains");
+  if (selectAllBox) {
+    selectAllBox.addEventListener("change", (e) => {
+      const checked = e.target.checked;
+      document.querySelectorAll(".selectDomain").forEach(cb => {
+        cb.checked = checked;
+      });
+    });
+  }
+});
+</script>

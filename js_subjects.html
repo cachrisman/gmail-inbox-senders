@@ -1,0 +1,47 @@
+<script>
+function loadSubjects(button) {
+  const sender = button.dataset.sender;
+  const search = document.getElementById("search").value;
+  setStatus(`Loading subjects from ${sender}...`, "working");
+  showLoading();
+  google.script.run
+    .withSuccessHandler((data) => {
+      hideLoading();
+      showSubjects(data);
+      setStatus(`Finished showing subjects from ${sender}`, "success");
+    })
+    .withFailureHandler((err) => {
+      hideLoading();
+      showError(err);
+    })
+    .getSubjects(sender, search);
+}
+
+function showSubjects(data) {
+  const row = document.querySelector(`tr[data-sender='${data.sender}']`);
+  if (!row) return;
+
+  // Remove existing subject details if open
+  if (row.nextElementSibling && row.nextElementSibling.classList.contains("sender-subjects")) {
+    row.nextElementSibling.remove();
+    return;
+  }
+
+  // Render new subject details row
+  const subjectsHtml = data.subjects
+    .map(
+      (s, i) =>
+        `${i + 1}. <span class="text-gray-500 mr-2">${s.date}</span><span>${s.subject}</span>`
+    )
+    .join("<br>");
+
+  row.insertAdjacentHTML(
+    "afterend",
+    `<tr class="sender-subjects bg-gray-50 text-xs md:text-sm">
+       <td colspan="7" class="border border-gray-300 px-2 md:px-3 py-2">
+         <div class="space-y-1">${subjectsHtml}</div>
+       </td>
+     </tr>`
+  );
+}
+</script>

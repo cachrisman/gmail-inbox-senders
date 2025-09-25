@@ -1,0 +1,37 @@
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("fetchCount").addEventListener("click", fetchCount);
+  document.getElementById("loadData").addEventListener("click", loadSenders);
+  document.getElementById("loadAllData").addEventListener("click", loadAllSenders);
+  document.getElementById("bgArchive").addEventListener("click", () => {
+    const sender = prompt("Enter sender email to archive:");
+    if (sender) startArchiveJobUI(sender);
+  });
+  document.getElementById("bgFetch").addEventListener("click", startFetchSendersJobUI);
+  document.getElementById("resumeJobs").addEventListener("click", resumeRunningJobs);
+
+  document.getElementById("data").addEventListener("click", (e) => {
+    if (e.target.classList.contains("showDomainSenders")) toggleDomainSenders(e.target.dataset.domain);
+    if (e.target.classList.contains("archiveDomain")) queueArchiveDomain(e.target.dataset.domain);
+    if (e.target.classList.contains("archiveSender")) markReadAndArchive(e.target);
+  });
+
+  // Filters
+  document.querySelectorAll(".filterType").forEach(btn => {
+    btn.addEventListener("click", () => {
+      jobsFilter.type = btn.dataset.type;
+      highlightActiveFilter("filterType", jobsFilter.type);
+      resumeRunningJobs();
+    });
+  });
+  document.querySelectorAll(".filterStatus").forEach(btn => {
+    btn.addEventListener("click", () => {
+      jobsFilter.status = btn.dataset.status;
+      highlightActiveFilter("filterStatus", jobsFilter.status);
+      resumeRunningJobs();
+    });
+  });
+
+  autoResumeJobs();
+});
+</script>

@@ -1,25 +1,21 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0"
-    />
-    <title>Gmail Inbox Senders</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <?!= HtmlService.createHtmlOutputFromFile('stylesheet').getContent(); ?>
-    <?!= HtmlService.createHtmlOutputFromFile('javascript').getContent(); ?>
+    <?!= HtmlService.createHtmlOutputFromFile('js_utils').getContent(); ?>
+    <?!= HtmlService.createHtmlOutputFromFile('js_counts').getContent(); ?> 
+    <?!= HtmlService.createHtmlOutputFromFile('js_senders').getContent(); ?>
+    <?!= HtmlService.createHtmlOutputFromFile('js_subjects').getContent(); ?>
+    <?!= HtmlService.createHtmlOutputFromFile('js_archive').getContent(); ?>
+    <?!= HtmlService.createHtmlOutputFromFile('js_jobs').getContent(); ?>
+    <?!= HtmlService.createHtmlOutputFromFile('js_events').getContent(); ?> 
   </head>
   <body class="max-w-5xl mx-auto p-6 font-sans text-gray-800">
     <!-- Spinner overlay -->
-    <div
-      id="loading-overlay"
-      class="fixed inset-0 bg-gray-200 bg-opacity-75 hidden items-center justify-center z-50"
-    >
-      <div
-        class="w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"
-      ></div>
+    <div id="loading-overlay" class="fixed inset-0 bg-gray-200 bg-opacity-75 hidden items-center justify-center z-50">
+      <div class="w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
     </div>
 
     <h1 class="text-2xl font-bold mb-6">Gmail Inbox Senders</h1>
@@ -28,23 +24,11 @@
     <div class="grid md:grid-cols-2 gap-4 mb-6">
       <div>
         <label for="search" class="block font-semibold">Search</label>
-        <input
-          id="search"
-          type="text"
-          class="w-full border rounded p-2"
-          value="in:inbox"
-        />
+        <input id="search" type="text" class="w-full border rounded p-2" value="in:inbox" />
       </div>
       <div>
         <label for="rounds" class="block font-semibold">Rounds</label>
-        <input
-          id="rounds"
-          type="number"
-          class="w-full border rounded p-2"
-          value="5"
-          min="1"
-          max="20"
-        />
+        <input id="rounds" type="number" class="w-full border rounded p-2" value="5" min="1" max="20" />
         <p class="text-sm text-gray-500">Each round = 100 threads</p>
       </div>
     </div>
@@ -52,84 +36,74 @@
     <!-- Status -->
     <div class="mb-6">
       <label class="block font-semibold">Status</label>
-      <div
-        id="status-text"
-        class="mt-1 p-2 rounded bg-gray-100 text-gray-800 text-sm md:text-base flex items-center gap-2"
-      >
+      <div id="status-text" class="mt-1 p-2 rounded bg-gray-100 text-gray-800 text-sm md:text-base flex items-center gap-2">
         <span>ℹ️</span><span>Not Loaded</span>
       </div>
     </div>
 
     <!-- Foreground controls -->
     <div class="space-x-2 mb-6">
-      <button
-        id="fetchCount"
-        class="px-4 py-2 bg-blue-500 text-white rounded"
-      >
-        Fetch Count
-      </button>
-      <button
-        id="loadData"
-        class="px-4 py-2 bg-green-600 text-white rounded"
-      >
-        Load Senders
-      </button>
-      <button
-        id="loadAllData"
-        class="px-4 py-2 bg-purple-600 text-white rounded"
-      >
-        Fetch All
-      </button>
+      <button id="fetchCount" class="px-4 py-2 bg-blue-500 text-white rounded">Fetch Count</button>
+      <button id="loadData" class="px-4 py-2 bg-green-600 text-white rounded">Load Senders</button>
+      <button id="loadAllData" class="px-4 py-2 bg-purple-600 text-white rounded">Fetch All</button>
     </div>
 
     <!-- Background job controls -->
     <div class="space-x-2 mb-6">
-      <button
-        id="bgArchive"
-        class="px-4 py-2 bg-yellow-500 text-white rounded"
-      >
+      <button id="bulkArchive" class="px-4 py-2 bg-red-600 text-white rounded">
+        Mark Selected Read & Archive
+      </button>
+      <button id="bgArchive" class="px-4 py-2 bg-yellow-500 text-white rounded">
         Start Background Archive Job
       </button>
-      <button
-        id="bgFetch"
-        class="px-4 py-2 bg-cyan-600 text-white rounded"
-      >
+      <button id="bgFetch" class="px-4 py-2 bg-cyan-600 text-white rounded">
         Start Background Fetch Job
       </button>
-      <button
-        id="resumeJobs"
-        class="px-4 py-2 bg-gray-600 text-white rounded"
-      >
+      <button id="resumeJobs" class="px-4 py-2 bg-gray-500 text-white rounded">
         Check Jobs
       </button>
     </div>
 
-    <!-- Results Table -->
+    <!-- Results -->
     <div class="overflow-x-auto">
-      <table
-        id="data"
-        class="min-w-full border border-collapse hidden text-xs md:text-sm"
-      >
+      <table id="data" class="w-full border border-collapse hidden">
         <thead class="bg-gray-800 text-white text-sm md:text-base">
           <tr>
-            <th class="p-2 border">Address</th>
+            <th class="p-2 border text-center">
+              <input type="checkbox" id="selectAllDomains">
+            </th>
+            <th class="p-2 border">Domain</th>
             <th class="p-2 border">Total</th>
             <th class="p-2 border">Unread</th>
             <th class="p-2 border">Threads</th>
+            <th class="p-2 border">Most Recent</th>
             <th class="p-2 border">Actions</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
     </div>
-
-    <!-- Jobs Table -->
     <div class="overflow-x-auto mt-6">
       <h2 class="text-lg font-semibold mb-2">Jobs</h2>
-      <table
-        id="jobsTable"
-        class="w-full border border-collapse hidden text-xs md:text-sm"
-      >
+      <!-- Job Filters -->
+      <div class="flex flex-wrap gap-4 mb-2">
+        <div>
+          <span class="font-semibold mr-2">Filter Type:</span>
+          <button class="filterType px-2 py-1 bg-gray-200 rounded" data-type="">All</button>
+          <button class="filterType px-2 py-1 bg-gray-200 rounded" data-type="fetchSenders">Fetch Senders</button>
+          <button class="filterType px-2 py-1 bg-gray-200 rounded" data-type="markReadAndArchive">Archive</button>
+        </div>
+        <div>
+          <span class="font-semibold mr-2">Filter Status:</span>
+          <button class="filterStatus px-2 py-1 bg-gray-200 rounded" data-status="">All</button>
+          <button class="filterStatus px-2 py-1 bg-gray-200 rounded" data-status="queued">Queued</button>
+          <button class="filterStatus px-2 py-1 bg-gray-200 rounded" data-status="running">Running</button>
+          <button class="filterStatus px-2 py-1 bg-gray-200 rounded" data-status="done">Done</button>
+          <button class="filterStatus px-2 py-1 bg-gray-200 rounded" data-status="error">Error</button>
+          <button class="filterStatus px-2 py-1 bg-gray-200 rounded" data-status="cancelled">Cancelled</button>
+        </div>
+      </div>
+      <table id="jobsTable" class="w-full border border-collapse hidden">
         <thead class="bg-gray-700 text-white text-sm md:text-base">
           <tr>
             <th class="p-2 border">Job ID</th>

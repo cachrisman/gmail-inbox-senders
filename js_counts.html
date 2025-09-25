@@ -1,0 +1,155 @@
+<script>
+/*********************
+ * Fetch exact count of threads
+ *********************/
+function fetchCount() {
+  const search = document.getElementById("search").value;
+  setStatus(`Fetching exact count for "${search}"...`, "working");
+  showLoading();
+  google.script.run
+    .withSuccessHandler((exact) => {
+      hideLoading();
+      setStatus(`Search "${search}" matches exactly ${exact} threads.`, "success");
+    })
+    .withFailureHandler((err) => {
+      hideLoading();
+      showError(err);
+    })
+    .getThreadCountExact(search);
+}
+
+/*********************
+ * Load senders with user-defined rounds
+ *********************/
+function loadSenders() {
+  const search = document.getElementById("search").value;
+  const maxRounds = parseInt(document.getElementById("rounds").value, 10) || 5;
+  const pageSize = 100;
+  const requested = maxRounds * pageSize;
+
+  google.script.run
+    .withSuccessHandler((estimate) => {
+      if (estimate > requested) {
+        const proceed = confirm(
+          `⚠️ About ${estimate} threads, but only ~${requested} will be fetched.\nContinue?`
+        );
+        if (!proceed) {
+          setStatus("Cancelled. Adjust rounds and try again.", "neutral");
+          return;
+        }
+      }
+      startFetchingSenders(search, maxRounds, pageSize);
+    })
+    .withFailureHandler(showError)
+    .getThreadEstimate(search);
+}
+
+/*********************
+ * Load all senders (auto rounds based on estimate)
+ *********************/
+function loadAllSenders() {
+  const search = document.getElementById("search").value;
+  const pageSize = 100;
+
+  google.script.run
+    .withSuccessHandler((estimate) => {
+      if (!estimate) {
+        setStatus("No threads found.", "neutral");
+        return;
+      }
+      const requiredRounds = Math.ceil(estimate / pageSize);
+      setStatus(
+        `Fetching ALL ~${estimate} threads (${requiredRounds} rounds × ${pageSize}).`,
+        "working"
+      );
+      startFetchingSenders(search, requiredRounds, pageSize);
+    })
+    .withFailureHandler(showError)
+    .getThreadEstimate(search);
+}
+
+/*********************
+ * Fetch senders page-by-page (with ETA)
+ *********************/
+function startFetchingSenders(search, maxRounds, pageSize) {
+  setStatus(
+    `Loading up to ${maxRounds * pageSize} threads for "${search}"...`,
+    "working"
+  );
+  document.querySelector("#data tbody").innerHTML = "";
+  showLoading();
+
+  let round = 0;
+  let allSenders = [];
+  const startTime = Date.now();
+
+  function fetchPage(pageToken) {
+    google.script.run
+      .withSuccessHandler((result) => {
+        allSenders = allSenders.concat(result.senders);
+        round++;
+
+        const elapsedSecs = (Date.now() - startTime) / 1000;
+        const avgPerPage = elapsedSecs / round;
+        const remaining = maxRounds - round;
+        const etaSecs = Math.max(0, Math.round(avgPerPage * remaining));
+
+        if (round < maxRounds && result.nextPageToken) {
+          setStatus(
+            `Loaded page ${round}/${maxRounds} (~${allSenders.length} senders). ` +
+              `Elapsed: ${formatSeconds(elapsedSecs)}, ETA: ~${formatSeconds(etaSecs)}`,
+            "working"
+          );
+          fetchPage(result.nextPageToken);
+        } else {
+          hideLoading();
+          processSenders(allSenders);
+          setStatus(`Finished in ${formatSeconds(elapsedSecs)}`, "success");
+        }
+      })
+      .withFailureHandler((err) => {
+        hideLoading();
+        showError(err);
+      })
+      .getSendersPage(search, pageToken, pageSize);
+  }
+
+  fetchPage(null);
+}
+
+/*********************
+ * Aggregate senders and group by domain
+ *********************/
+function processSenders(allSenders) {
+  const aggregated = {};
+  allSenders.forEach(([address, stats]) => {
+    if (!aggregated[address]) {
+      aggregated[address] = {
+        total: 0,
+        unread: 0,
+        threads: 0,
+        lastDate: stats.lastDate || null,
+      };
+    }
+    aggregated[address].total += stats.total;
+    aggregated[address].unread += stats.unread;
+    aggregated[address].threads += stats.threads;
+
+    if (
+      !aggregated[address].lastDate ||
+      (stats.lastDate &&
+        new Date(stats.lastDate) > new Date(aggregated[address].lastDate))
+    ) {
+      aggregated[address].lastDate = stats.lastDate;
+    }
+  });
+
+  const sortable = Object.entries(aggregated).sort(
+    (a, b) => b[1].total - a[1].total
+  );
+
+  // Save globally so sub-tables can expand
+  window.groupedDomains = groupByDomain(sortable);
+  showDomains(window.groupedDomains);
+}
+</script>

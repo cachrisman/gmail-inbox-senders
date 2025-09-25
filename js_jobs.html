@@ -1,0 +1,278 @@
+<script>
+let jobsSort = { column: "UpdatedAt", asc: false };
+let jobsFilter = { type: "", status: "" };
+
+/*********************
+ * Highlight active filter buttons
+ *********************/
+function highlightActiveFilter(cls, value) {
+  document.querySelectorAll(`.${cls}`).forEach((btn) => {
+    if (btn.dataset.type === value || btn.dataset.status === value) {
+      btn.classList.add("bg-blue-500", "text-white");
+      btn.classList.remove("bg-gray-200");
+    } else {
+      btn.classList.remove("bg-blue-500", "text-white");
+      btn.classList.add("bg-gray-200");
+    }
+  });
+}
+
+/*********************
+ * Fetch all jobs and render
+ *********************/
+function resumeRunningJobs() {
+  google.script.run
+    .withSuccessHandler((jobs) => renderJobsTable(jobs))
+    .withFailureHandler(showError)
+    .listAllJobs();
+}
+
+/*********************
+ * Auto resume on page load
+ *********************/
+function autoResumeJobs() {
+  google.script.run
+    .withSuccessHandler((jobs) => {
+      if (jobs.length > 0) {
+        jobs.forEach((job) => {
+          if (job.Status === "running") {
+            pollJob(job["Job ID"], () => resumeRunningJobs());
+          }
+        });
+      } else {
+        setStatus("No jobs running", "neutral");
+      }
+    })
+    .withFailureHandler(showError)
+    .listRunningJobs();
+}
+
+/*********************
+ * Poll a job until it completes
+ *********************/
+function pollJob(jobId, onUpdate) {
+  function poll() {
+    google.script.run
+      .withSuccessHandler((job) => {
+        console.info('running pollJob -> poll', job)
+        if (!job) {
+          setStatus(`Job ${jobId} not found.`, "error");
+          return;
+        }
+
+        const processed = Number(job.Processed || 0);
+        let total = Number(job.Total || 0);
+        const totalLabel = (!total || total === 201) ? "~" + (total || 201) : total;
+
+        let statusMsg = "";
+        if (job.Status === "running") {
+          // Elapsed + ETA
+          const started = job.StartedAt ? new Date(job.StartedAt) : null;
+          const now = new Date();
+          let elapsedSecs = 0;
+          let etaSecs = null;
+          if (started) {
+            elapsedSecs = Math.floor((now - started) / 1000);
+            const rate = processed / Math.max(1, elapsedSecs);
+            if (rate > 0 && total > 0 && total !== 201) {
+              const remaining = total - processed;
+              etaSecs = Math.round(remaining / rate);
+            }
+          }
+
+          statusMsg =
+            `${job.Type === "fetchSenders" ? "Fetching senders" : "Archiving"}: ` +
+            `${processed}/${totalLabel} processed... `;
+
+          if (elapsedSecs > 0) statusMsg += `Elapsed: ${formatSeconds(elapsedSecs)}`;
+          if (etaSecs !== null) statusMsg += `, ETA: ${formatSeconds(etaSecs)}`;
+
+          setStatus(statusMsg, "working");
+        } else if (job.Status === "done") {
+          setStatus(`Job ${job["Job ID"]} finished.`, "success");
+        } else if (job.Status === "error") {
+          setStatus(`Job ${job["Job ID"]} error: ${job.Error}`, "error");
+        } else if (job.Status === "cancelled") {
+          setStatus(`Job ${job["Job ID"]} cancelled.`, "neutral");
+        } else {
+          setStatus(`Job ${job["Job ID"]} status: ${job.Status}`, "neutral");
+        }
+
+        if (onUpdate) onUpdate(job);
+        if (job.Status === "running") setTimeout(poll, 5000);
+      })
+      .withFailureHandler(showError)
+      .getJobStatus(jobId);
+  }
+  poll();
+}
+
+/*********************
+ * Render Jobs Table
+ *********************/
+function renderJobsTable(jobs) {
+  const table = document.getElementById("jobsTable");
+  const tbody = table.querySelector("tbody");
+  tbody.innerHTML = "";
+
+  let filtered = jobs.filter((job) => {
+    if (jobsFilter.type && job.Type !== jobsFilter.type) return false;
+    if (jobsFilter.status && job.Status !== jobsFilter.status) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    let col = jobsSort.column;
+    let va = a[col] || "";
+    let vb = b[col] || "";
+    if (col.includes("At")) {
+      va = new Date(va);
+      vb = new Date(vb);
+    }
+    if (va < vb) return jobsSort.asc ? -1 : 1;
+    if (va > vb) return jobsSort.asc ? 1 : -1;
+    return 0;
+  });
+
+  if (!filtered.length) {
+    table.classList.add("hidden");
+    return;
+  }
+
+  filtered.forEach((job) => {
+    const isRunning = job.Status === "running";
+    const isQueued = job.Status === "queued";
+    const isDone = job.Status === "done";
+    const isError = job.Status === "error";
+    const isCancelled = job.Status === "cancelled";
+
+    let statusCell = "";
+    if (isRunning) statusCell = "⏳ Running";
+    else if (isQueued) statusCell = "🟡 Queued";
+    else if (isDone) statusCell = "✅ Done";
+    else if (isError) statusCell = "❌ Error";
+    else if (isCancelled) statusCell = "🚫 Cancelled";
+    else statusCell = job.Status;
+
+    tbody.insertAdjacentHTML(
+      "beforeend",
+      `<tr class="text-xs md:text-sm">
+        <td class="border px-2 break-all">${job["Job ID"]}</td>
+        <td class="border px-2">${job.Type}</td>
+        <td class="border px-2">${job.Target || ""}</td>
+        <td class="border px-2">${statusCell}</td>
+        <td class="border px-2 text-center">${job.Processed}</td>
+        <td class="border px-2 text-center">${job.Total}</td>
+        <td class="border px-2">${job.UpdatedAt ? new Date(job.UpdatedAt).toLocaleTimeString() : ""}</td>
+        <td class="border px-2 space-x-1">
+          ${isRunning
+            ? `<button class="cancelJob px-2 py-1 bg-red-500 text-white rounded text-xs" data-id="${job["Job ID"]}">Cancel</button>`
+            : ""}
+          ${isDone && job.Type === "fetchSenders"
+            ? `<button class="viewResult px-2 py-1 bg-blue-500 text-white rounded text-xs" data-id="${job["Job ID"]}">View Results</button>`
+            : ""}
+        </td>
+      </tr>`
+    );
+  });
+
+  table.classList.remove("hidden");
+
+  tbody.querySelectorAll(".cancelJob").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      google.script.run
+        .withSuccessHandler(() => {
+          setStatus(`Job ${id} cancelled.`, "neutral");
+          resumeRunningJobs();
+        })
+        .withFailureHandler(showError)
+        .cancelJob(id);
+    });
+  });
+
+  tbody.querySelectorAll(".viewResult").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      google.script.run
+        .withSuccessHandler((result) => { 
+          console.log('Job result:', result)
+          if (result.error) {
+            setStatus(result.error, "error");
+          } else if (result.Type === "fetchSenders") {
+            const sortable = Object.entries(result.senders).sort(
+              (a, b) => b[1].total - a[1].total
+            );
+            showSenders(sortable);
+            setStatus(`Loaded results for job ${id}`, "success");
+          } else {
+            setStatus(`Job ${id} has no viewable results.`, "neutral");
+          }
+        })
+        .withFailureHandler(showError)
+        .getJobResult(id);
+    });
+  });
+}
+
+/*********************
+ * Sorting (click headers)
+ *********************/
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("#jobsTable thead th").forEach((th, i) => {
+    const cols = ["Job ID", "Type", "Target", "Status", "Processed", "Total", "UpdatedAt"];
+    const col = cols[i];
+    if (!col) return;
+    th.style.cursor = "pointer";
+    th.addEventListener("click", () => {
+      if (jobsSort.column === col) {
+        jobsSort.asc = !jobsSort.asc;
+      } else {
+        jobsSort.column = col;
+        jobsSort.asc = true;
+      }
+      resumeRunningJobs();
+    });
+  });
+});
+
+/*********************
+ * Start Background Fetch Job
+ *********************/
+function startFetchSendersJobUI() {
+  const search = document.getElementById("search").value;
+  setStatus(`Starting background fetch for "${search}"...`, "working");
+  showLoading();
+
+  google.script.run
+    .withSuccessHandler((jobId) => {
+      hideLoading();
+      if (jobId && jobId.error) {
+        setStatus(jobId.error, "error");
+        return;
+      }
+
+      setStatus(`Fetch job started. Job ID: ${jobId}. Calculating exact total...`, "neutral");
+      resumeRunningJobs();
+
+      // Start polling immediately
+      pollJob(jobId, () => resumeRunningJobs());
+
+      // Kick off exact-count in parallel
+      google.script.run
+        .withSuccessHandler((res) => {
+          if (res && res.ok) {
+            setStatus(`Exact total count determined: ${res.total}. Fetching…`, "working");
+            resumeRunningJobs();
+          }
+        })
+        .withFailureHandler(showError)
+        .computeExactCountForJob(jobId);
+    })
+    .withFailureHandler((err) => {
+      hideLoading();
+      showError(err);
+    })
+    .startFetchSendersJob(search);
+}
+</script>

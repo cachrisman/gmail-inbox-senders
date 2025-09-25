@@ -1,0 +1,46 @@
+<script>
+function markReadAndArchive(button) {
+  const sender = button.dataset.sender;
+  const search = document.getElementById("search").value;
+  setStatus(`Queuing archive job for ${sender}...`, "working");
+  google.script.run
+    .withSuccessHandler((result) => {
+      if (result.error) setStatus(result.error, "error");
+      else {
+        setStatus(`Archive job queued for ${sender}`, "neutral");
+        const row = document.querySelector(`tr[data-sender='${sender}']`);
+        if (row && row.dataset.subjectsAdded) row.nextElementSibling.remove();
+        if (row) row.remove();
+        resumeRunningJobs();
+      }
+    })
+    .withFailureHandler(showError)
+    .startMarkReadAndArchiveJob(search, sender);
+}
+
+function queueArchiveDomain(domain) {
+  const search = document.getElementById("search").value;
+  setStatus(`Queuing archive job for ${domain}...`, "working");
+  google.script.run
+    .withSuccessHandler((result) => {
+      if (result.error) setStatus(result.error, "error");
+      else {
+        setStatus(`Archive job queued for ${domain}`, "neutral");
+        const row = document.querySelector(`tr[data-domain='${domain}']`);
+        if (row) row.remove();
+        resumeRunningJobs();
+      }
+    })
+    .withFailureHandler(showError)
+    .startMarkReadAndArchiveJob(search, domain);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("bulkArchive").addEventListener("click", () => {
+    const selected = Array.from(document.querySelectorAll(".selectDomain:checked")).map(cb => cb.dataset.domain);
+    if (!selected.length) { setStatus("No domains selected", "neutral"); return; }
+    selected.forEach(domain => queueArchiveDomain(domain));
+  });
+});
+
+</script>

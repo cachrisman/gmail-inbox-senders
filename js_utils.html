@@ -1,0 +1,45 @@
+<script>
+
+function showLoading() {
+  document.getElementById("loading-overlay").style.display = "flex";
+}
+
+function hideLoading() {
+  document.getElementById("loading-overlay").style.display = "none";
+}
+
+function setStatus(msg, type = "neutral") {
+  const statusEl = document.getElementById("status-text");
+  statusEl.innerHTML = "";
+  const iconSpan = document.createElement("span");
+  const textSpan = document.createElement("span");
+  console.log('setStatus', msg)
+  textSpan.textContent = msg;
+
+  statusEl.className =
+    "mt-1 p-2 rounded text-sm md:text-base flex items-center gap-2";
+
+  switch (type) {
+    case "working": statusEl.classList.add("bg-blue-100","text-blue-800"); iconSpan.textContent="⏳"; break;
+    case "success": statusEl.classList.add("bg-green-100","text-green-800"); iconSpan.textContent="✅"; break;
+    case "error":   statusEl.classList.add("bg-red-100","text-red-800");   iconSpan.textContent="❌"; break;
+    default:        statusEl.classList.add("bg-gray-100","text-gray-800"); iconSpan.textContent="ℹ️";
+  }
+
+  statusEl.appendChild(iconSpan);
+  statusEl.appendChild(textSpan);
+}
+
+function showError(error) {
+  console.error(error);
+  hideLoading();
+  setStatus(`Error: ${error}`, "error");
+}
+
+function formatSeconds(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2,"0")}`;
+}
+
+</script>
