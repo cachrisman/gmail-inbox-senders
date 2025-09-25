@@ -1,4 +1,6 @@
 <script>
+window.currentSort = { column: 'total', asc: false };
+
 function showSenders(senders) {
   // For compatibility: group and render
   window.groupedDomains = groupByDomain(senders);
@@ -12,7 +14,13 @@ function getBaseDomain(email) {
   const domain = (email.split("@")[1] || "").toLowerCase();
   const parts = domain.split(".");
   if (parts.length >= 2) {
-    return parts.slice(-2).join(".");
+    const lastTwo = parts.slice(-2).join(".");
+    const lastThree = parts.slice(-3).join(".");
+    // Handle common multi-label TLDs
+    if (lastTwo === "co.uk" || lastTwo === "org.uk" || lastTwo === "gov.uk" || lastTwo === "ac.uk") {
+      return lastThree;
+    }
+    return lastTwo;
   }
   return domain;
 }
@@ -51,11 +59,35 @@ function groupByDomain(senders) {
   return Object.entries(grouped).sort((a, b) => b[1].total - a[1].total);
 }
 
+function sortDomains(grouped, column, asc) {
+  return grouped.sort((a, b) => {
+    const statsA = a[1];
+    const statsB = b[1];
+    let valA, valB;
+    switch(column) {
+      case 'domain': valA = a[0]; valB = b[0]; break;
+      case 'total': valA = statsA.total; valB = statsB.total; break;
+      case 'unread': valA = statsA.unread; valB = statsB.unread; break;
+      case 'threads': valA = statsA.threads; valB = statsB.threads; break;
+      case 'lastDate':
+        valA = statsA.lastDate ? new Date(statsA.lastDate).getTime() : 0;
+        valB = statsB.lastDate ? new Date(statsB.lastDate).getTime() : 0;
+        break;
+      default: valA = 0; valB = 0;
+    }
+    if (valA < valB) return asc ? -1 : 1;
+    if (valA > valB) return asc ? 1 : -1;
+    return 0;
+  });
+}
+
 /*********************
  * Render domains table
  *********************/
 function showDomains(grouped) {
   window.groupedDomains = grouped; // keep for sub-table expansion
+  grouped = sortDomains(grouped, window.currentSort.column, window.currentSort.asc);
+
   const tbody = document.querySelector("#data tbody");
   tbody.innerHTML = "";
 
@@ -88,6 +120,19 @@ function showDomains(grouped) {
   });
 
   document.getElementById("data").classList.remove("hidden");
+
+  document.querySelectorAll("#data thead th[data-sort]").forEach(th => {
+    th.addEventListener("click", () => {
+      const col = th.getAttribute("data-sort");
+      if (window.currentSort.column === col) {
+        window.currentSort.asc = !window.currentSort.asc;
+      } else {
+        window.currentSort.column = col;
+        window.currentSort.asc = true;
+      }
+      showDomains(window.groupedDomains);
+    });
+  });
 }
 
 /*********************
