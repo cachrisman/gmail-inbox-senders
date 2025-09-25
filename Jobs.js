@@ -6,7 +6,7 @@ function listAllJobs() {
 }
 
 function listRunningJobs() {
-  return listAllJobs().filter((j) => j.Status === "running");
+  return listAllJobs().filter(j => j.Status === "running");
 }
 
 /**
@@ -21,26 +21,15 @@ function writeJobResults(jobId, job, rows) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 
   // Required headers in Results sheet
-  const REQUIRED = [
-    "Job ID",
-    "Type",
-    "Search",
-    "Target",
-    "Address",
-    "Total",
-    "Unread",
-    "Threads",
-    "LastDate",
-    "FinishedAt",
-  ];
-  REQUIRED.forEach((h) => {
+  const REQUIRED = ["Job ID","Type","Search","Target","Address","Total","Unread","Threads","LastDate","FinishedAt"];
+  REQUIRED.forEach(h => {
     if (headers.indexOf(h) === -1) {
       throw new Error("Results sheet missing required header: " + h);
     }
   });
 
   const startRow = sheet.getLastRow() + 1;
-  const values = rows.map((r) => [
+  const values = rows.map(r => ([
     jobId,
     job.Type || "",
     job.Search || "",
@@ -50,8 +39,8 @@ function writeJobResults(jobId, job, rows) {
     Number(r.unread || 0),
     Number(r.threads || 0),
     r.lastDate || "",
-    job.FinishedAt || new Date().toISOString(),
-  ]);
+    job.FinishedAt || new Date().toISOString()
+  ]));
 
   sheet.getRange(startRow, 1, values.length, headers.length).setValues(values);
   return values.length;
@@ -62,24 +51,21 @@ function writeJobResults(jobId, job, rows) {
  ***********************/
 function startMarkReadAndArchiveJob(search, target) {
   const jobId = Utilities.getUuid();
-  const queryTarget =
-    target && target.indexOf("@") !== -1
-      ? `from:${target}`
-      : `from:*@${target}`;
+  const queryTarget = target && target.indexOf("@") !== -1 ? `from:${target}` : `from:*@${target}`;
 
   const job = {
     "Job ID": jobId,
-    Type: "markReadAndArchive",
-    Search: search,
-    Target: target,
-    Query: queryTarget,
-    Status: "queued",
-    Processed: 0,
-    Total: 0,
-    PageToken: "",
-    StartedAt: "",
-    UpdatedAt: new Date().toISOString(),
-    Error: "",
+    "Type": "markReadAndArchive",
+    "Search": search,
+    "Target": target,
+    "Query": queryTarget,
+    "Status": "queued",
+    "Processed": 0,
+    "Total": 0,
+    "PageToken": "",
+    "StartedAt": "",
+    "UpdatedAt": new Date().toISOString(),
+    "Error": ""
   };
   saveJob(job);
   ensureJobTrigger();
@@ -90,16 +76,16 @@ function startFetchSendersJob(search) {
   const jobId = Utilities.getUuid();
   const job = {
     "Job ID": jobId,
-    Type: "fetchSenders",
-    Search: search,
-    Target: search,
-    Status: "queued",
-    Processed: 0,
-    Total: 0,
-    PageToken: "",
-    StartedAt: "",
-    UpdatedAt: new Date().toISOString(),
-    Error: "",
+    "Type": "fetchSenders",
+    "Search": search,
+    "Target": search,
+    "Status": "queued",
+    "Processed": 0,
+    "Total": 0,
+    "PageToken": "",
+    "StartedAt": "",
+    "UpdatedAt": new Date().toISOString(),
+    "Error": ""
   };
   saveJob(job);
   ensureJobTrigger();
@@ -129,13 +115,10 @@ function markJob(job, fields) {
  ***********************/
 function ensureJobTrigger() {
   const exists = ScriptApp.getProjectTriggers().some(
-    (t) => t.getHandlerFunction() === "processBackgroundJobs"
+    t => t.getHandlerFunction() === "processBackgroundJobs"
   );
   if (!exists) {
-    ScriptApp.newTrigger("processBackgroundJobs")
-      .timeBased()
-      .everyMinutes(1)
-      .create();
+    ScriptApp.newTrigger("processBackgroundJobs").timeBased().everyMinutes(1).create();
   }
 }
 
@@ -150,9 +133,9 @@ function processBackgroundJobs() {
   }
 
   // Find running, else promote one queued
-  let running = jobs.find((j) => j.Status === "running");
+  let running = jobs.find(j => j.Status === "running");
   if (!running) {
-    const queued = jobs.find((j) => j.Status === "queued");
+    const queued = jobs.find(j => j.Status === "queued");
     if (queued) {
       queued.Status = "running";
       queued.StartedAt = new Date().toISOString();
@@ -170,14 +153,11 @@ function processBackgroundJobs() {
   Logger.log(`Processing job ${running["Job ID"]} type=${running.Type}`);
   try {
     if (running.Type === "markReadAndArchive") {
-      processArchiveBatchJob(running); // in Processors.gs
+      processArchiveBatchJob(running);            // in Processors.gs
     } else if (running.Type === "fetchSenders") {
-      processFetchSendersBatchJob(running); // in Processors.gs
+      processFetchSendersBatchJob(running);       // in Processors.gs
     } else {
-      markJob(running, {
-        Status: "error",
-        Error: `Unknown job type: ${running.Type}`,
-      });
+      markJob(running, { Status: "error", Error: `Unknown job type: ${running.Type}` });
     }
   } catch (e) {
     markJob(running, { Status: "error", Error: e.message });

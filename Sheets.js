@@ -17,7 +17,7 @@ function getAggregatedSheet() {
 function sheetToObjects(sheet) {
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
-  return values.slice(1).map((r) => {
+  return values.slice(1).map(r => {
     const obj = {};
     headers.forEach((h, i) => (obj[h] = r[i]));
     return obj;
@@ -33,10 +33,10 @@ function getJobRowInfo(jobId) {
   const headers = values[0];
   const jobIdIdx = headers.indexOf("Job ID");
   if (jobIdIdx === -1) throw new Error("Jobs sheet missing 'Job ID' column");
-  const rowIndex = values.findIndex((r) => r[jobIdIdx] === jobId);
+  const rowIndex = values.findIndex(r => r[jobIdIdx] === jobId);
   if (rowIndex <= 0) return null;
   const job = {};
-  headers.forEach((h, i) => (job[h] = values[rowIndex][i]));
+  headers.forEach((h, i) => job[h] = values[rowIndex][i]);
   return { sheet, headers, rowIndex, job };
 }
 
@@ -46,7 +46,7 @@ function getJobRowInfo(jobId) {
 function saveJob(job) {
   const sheet = getJobsSheet();
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const row = headers.map((h) => (h in job ? job[h] : ""));
+  const row = headers.map(h => (h in job ? job[h] : ""));
   sheet.appendRow(row);
 }
 
@@ -58,7 +58,7 @@ function updateJob(job) {
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
   const jobIdIdx = headers.indexOf("Job ID");
-  const rowIdx = values.findIndex((r) => r[jobIdIdx] === job["Job ID"]);
+  const rowIdx = values.findIndex(r => r[jobIdIdx] === job["Job ID"]);
   if (rowIdx <= 0) {
     Logger.log(`updateJob: Job ID ${job["Job ID"]} not found`);
     return;
